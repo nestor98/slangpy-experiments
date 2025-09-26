@@ -3,13 +3,14 @@
 // the final slang will be a sandwich with shadertoy1.slang + user code (beginning of shadertoy2) + shadertoy2.slang
 
 struct ShadertoyWrapper {
-    // SPECIFIC DEFINES HERE:
-    float2 x_range = float2(0, 10.);
-    
-    float wl_idx[11];
+    // SPECIFIC DEFINES HERE: !!!!!! WARNING: THEY MAKE THE PROGRAM CRASH RIGHT NOW
+    // float2 x_range = float2(0, 10.);
 
-    float min_f = 0.9, max_f = 2.; // min and max freq
-    float min_twist = -.34, max_twist = -.1;
+    // float wl_idx[11];
+    static float a; // ONLY STATIC SEEMS TO WORK!!!
+
+    // float min_f = 0.9, max_f = 2.; // min and max freq
+    // float min_twist = -.34, max_twist = -.1;
 
 
     // User code will go here and provide the impl for:
@@ -21,14 +22,14 @@ struct ShadertoyWrapper {
 
     __init() {
         // SPECIFIC INITIALIZATION HERE:
-        x_range = float2(0, 10.);
+        // x_range = float2(0, 10.);
 
-        min_f = 0.9;
-        max_f = 2.; // min and max freq
-        min_twist = -.34;
-        max_twist = -.1;
+        // min_f = 0.9;
+        // max_f = 2.; // min and max freq
+        // min_twist = -.34;
+        // max_twist = -.1;
 
-        wl_idx = float[11](
+        /*wl_idx = float[11](
             0.01, // blue
             0.99, // red
             0.33, // green
@@ -40,7 +41,7 @@ struct ShadertoyWrapper {
             0.7,
             0.65,
             0.85 // red
-        );
+        );*/
     }
     static This getDefault() { return This(); }
 }

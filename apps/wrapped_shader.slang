@@ -294,644 +294,695 @@ typealias sampler2D = TextureSamplerPair;
 // the final slang will be a sandwich with shadertoy1.slang + user code (beginning of shadertoy2) + shadertoy2.slang
 
 struct ShadertoyWrapper {
-    // SPECIFIC DEFINES HERE:
-    float2 x_range = float2(0, 10.);
-    
-    float wl_idx[11];
+    // SPECIFIC DEFINES HERE: !!!!!! WARNING: THEY MAKE THE PROGRAM CRASH RIGHT NOW
+    // float2 x_range = float2(0, 10.);
 
-    float min_f = 0.9, max_f = 2.; // min and max freq
-    float min_twist = -.34, max_twist = -.1;
+    // float wl_idx[11];
+    static float a;
+
+    // float min_f = 0.9, max_f = 2.; // min and max freq
+    // float min_twist = -.34, max_twist = -.1;
 
 
     // User code will go here and provide the impl for:
     // void mainImage(out float4 fragColor, in float2 fragCoord);
 
     // ---------------- User Code Starts Here ----------------
-    // source: https://www.shadertoy.com/view/flXBzB
-#define PI 3.141592653
+    // The MIT License
+// Copyright © 2013 Inigo Quilez
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions: The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+// The license is here only not because I want to (can one
+// license pieces of math?), but because people get upset
+// if I don't add one...
 
-// old defines:
-#define MOUSE_MODE 3 
-#define VIEW 3
-#define REPEAT_DOMAIN 0
+// A list of useful distance function to simple primitives. All
+// these functions (except for ellipsoid) return an exact
+// euclidean distance, meaning they produce a better SDF than
+// what you'd get if you were constructing them from boolean
+// operations (such as cutting an infinite cylinder with two planes).
 
+// List of other 3D SDFs:
+//    https://www.shadertoy.com/playlist/43cXRl
+// and
+//    https://iquilezles.org/articles/distfunctions
 
-// Some defines had to be moved to shadertoy2.slang for language limitations >:(
-
-
-//vec2 iCam; 
-
-
-
-
-// original: https://www.shadertoy.com/view/7djSzK
-// See: https://www.desmos.com/calculator/hvqys18zux
-// f: frequency
-// a: amplitude
-float sdSine(in vec2 p, in float f, in float a) {
-    f *= 3.14159265359 * a; p /= a; // Modify to handle varying amplitude
-    float r = 3.14159265359 / f, h = 0.5 * r, ff = f * f;
-    p = vec2(mod(p.x + h, r) - h, p.y * sign(r - mod(p.x + h, 2.0 * r))); // Remap
-
-    // Get closest on linear approximation
-    float t = clamp((0.818309886184 * f * p.y + p.x) / (0.669631069826 * ff + 1.0), -h, h);
-
-    // Three iterations of Newton-Raphson
-    for (int n=0; n < 3; n++) {
-        float k = t * f, c = cos(k), s = sin(k);
-        t -= ((s - p.y) * c * f + t - p.x) / ((c * c - s * s + s * p.y) * ff + 1.0);
-    }
-
-    return length(p - vec2(t, sin(t * f))) * a;
-}
-
-// -------------------- CIE XYZ 2006 ----------------------------
-
-vec3 xyz2srgb(vec3 xyz) {
-    // From https://github.com/tobspr/GLSL-Color-Spaces
-    const mat3 XYZ_2_RGB = (mat3(
-         3.2404542,-0.9692660, 0.0556434,
-        -1.5371385, 1.8760108,-0.2040259,
-        -0.4985314, 0.0415560, 1.0572252
-    ));
-    return XYZ_2_RGB * xyz;
-}
+#define AA 1   // make this 2 or 3 for antialiasing
 
 
-// t should be in 0-1. Returns the srgb color corresponding to that wl
-// according to cie 1931, fitted by wyman et al
+//------------------------------------------------------------------
+float dot2( in vec2 v ) { return dot(v,v); }
+float dot2( in vec3 v ) { return dot(v,v); }
+float ndot( in vec2 a, in vec2 b ) { return a.x*b.x - a.y*b.y; }
 
-// by wyman et al https://jcgt.org/published/0002/02/01/paper.pdf
-float xFit_1931( float wave )
+float sdPlane( vec3 p )
 {
-    float t1 = (wave-442.0)*((wave<442.0)?0.0624:0.0374);
-    float t2 = (wave-599.8)*((wave<599.8)?0.0264:0.0323);
-    float t3 = (wave-501.1)*((wave<501.1)?0.0490:0.0382);
-    return 0.362*exp(-0.5*t1*t1) + 1.056*exp(-0.5*t2*t2) - 0.065*exp(-0.5*t3*t3);
+	return p.y;
 }
-float yFit_1931( float wave )
+
+float sdSphere( vec3 p, float s )
 {
-    float t1 = (wave-568.8)*((wave<568.8)?0.0213:0.0247);
-    float t2 = (wave-530.9)*((wave<530.9)?0.0613:0.0322);
-    return 0.821*exp(-0.5*t1*t1) + 0.286*exp(-0.5*t2*t2);
+    return length(p)-s;
 }
-float zFit_1931( float wave )
+
+float sdBox( vec3 p, vec3 b )
 {
-    float t1 = (wave-437.0)*((wave<437.0)?0.0845:0.0278);
-    float t2 = (wave-459.0)*((wave<459.0)?0.0385:0.0725);
-    return 1.217*exp(-0.5*t1*t1) + 0.681*exp(-0.5*t2*t2);
+    vec3 d = abs(p) - b;
+    return min(max(d.x,max(d.y,d.z)),0.0) + length(max(d,0.0));
 }
 
-vec3 xyz_fit(float wl) {
-    return vec3(xFit_1931(wl), yFit_1931(wl), zFit_1931(wl));
-}
-
-vec3 rgb_wl(float t) {
-    float wl = mix(400,700,t);
-    vec3 rgb = xyz2srgb(xyz_fit(wl));
-    return rgb;
-}
-
-
-
-/// Intersect plane (https://iquilezles.org/articles/intersectors/)
-// plane degined by p (p.xyz must be normalized)
-float plaIntersect( in vec3 ro, in vec3 rd, in vec4 p )
+float sdBoxFrame( vec3 p, vec3 b, float e )
 {
-    return -(dot(ro,p.xyz)+p.w)/dot(rd,p.xyz);
-}
+       p = abs(p  )-b;
+  vec3 q = abs(p+e)-e;
 
-// Pristine grid: https://www.shadertoy.com/view/mdVfWw
-// version with explicit gradients for use with raycast shaders like this one
-float pristineGrid( in vec2 uv, in vec2 ddx, in vec2 ddy, vec2 lineWidth)
+  return min(min(
+      length(max(vec3(p.x,q.y,q.z),0.0))+min(max(p.x,max(q.y,q.z)),0.0),
+      length(max(vec3(q.x,p.y,q.z),0.0))+min(max(q.x,max(p.y,q.z)),0.0)),
+      length(max(vec3(q.x,q.y,p.z),0.0))+min(max(q.x,max(q.y,p.z)),0.0));
+}
+float sdEllipsoid( in vec3 p, in vec3 r ) // approximated
 {
-    vec2 uvDeriv = vec2(length(vec2(ddx.x, ddy.x)), length(vec2(ddx.y, ddy.y)));
-    bvec2 invertLine = bvec2(lineWidth.x > 0.5, lineWidth.y > 0.5);
-    vec2 targetWidth = vec2(
-      invertLine.x ? 1.0 - lineWidth.x : lineWidth.x,
-      invertLine.y ? 1.0 - lineWidth.y : lineWidth.y
-      );
-    vec2 drawWidth = clamp(targetWidth, uvDeriv, vec2(0.5));
-    vec2 lineAA = uvDeriv * 1.5;
-    vec2 gridUV = abs(fract(uv) * 2.0 - 1.0);
-    gridUV.x = invertLine.x ? gridUV.x : 1.0 - gridUV.x;
-    gridUV.y = invertLine.y ? gridUV.y : 1.0 - gridUV.y;
-    vec2 grid2 = smoothstep(drawWidth + lineAA, drawWidth - lineAA, gridUV);
-
-    grid2 *= clamp(targetWidth / drawWidth, 0.0, 1.0);
-    grid2 = mix(grid2, targetWidth, clamp(uvDeriv * 2.0 - 1.0, 0.0, 1.0));
-    grid2.x = invertLine.x ? 1.0 - grid2.x : grid2.x;
-    grid2.y = invertLine.y ? 1.0 - grid2.y : grid2.y;
-    return mix(grid2.x, 1.0, grid2.y);
+    float k0 = length(p/r);
+    float k1 = length(p/(r*r));
+    return k0*(k0-1.0)/k1;
 }
 
-// By iq: https://iquilezles.org/articles/intersectors/
-// cylinder defined by extremes a and b, and radious ra
-vec4 cylIntersect( in vec3 ro, in vec3 rd, in vec3 a, in vec3 b, float ra )
+float sdTorus( vec3 p, vec2 t )
 {
-    vec3  ba = b  - a;
-    vec3  oc = ro - a;
-    float baba = dot(ba,ba);
-    float bard = dot(ba,rd);
-    float baoc = dot(ba,oc);
-    float k2 = baba            - bard*bard;
-    float k1 = baba*dot(oc,rd) - baoc*bard;
-    float k0 = baba*dot(oc,oc) - baoc*baoc - ra*ra*baba;
-    float h = k1*k1 - k2*k0;
-    if( h<0.0 ) return vec4(-1.0);//no intersection
-    h = sqrt(h);
-    float t = (-k1-h)/k2;
-    // body
-    float y = baoc + t*bard;
-    if( y>0.0 && y<baba ) return vec4( t, (oc+t*rd - ba*y/baba)/ra );
-    // caps
-    t = ( ((y<0.0) ? 0.0 : baba) - baoc)/bard;
-    if( abs(k1+k2*t)<h )
-    {
-        return vec4( t, ba*sign(y)/sqrt(baba) );
-    }
-    return vec4(-1.0);//no intersection
+    return length( vec2(length(p.xz)-t.x,p.y) )-t.y;
 }
 
-// by iq: https://iquilezles.org/articles/distfunctions/
+float sdCappedTorus(in vec3 p, in vec2 sc, in float ra, in float rb)
+{
+    p.x = abs(p.x);
+    float k = (sc.y*p.x>sc.x*p.y) ? dot(p.xy,sc) : length(p.xy);
+    return sqrt( dot(p,p) + ra*ra - 2.0*ra*k ) - rb;
+}
+
+float sdHexPrism( vec3 p, vec2 h )
+{
+    vec3 q = abs(p);
+
+    const vec3 k = vec3(-0.8660254, 0.5, 0.57735);
+    p = abs(p);
+    p.xy -= 2.0*min(dot(k.xy, p.xy), 0.0)*k.xy;
+    vec2 d = vec2(
+       length(p.xy - vec2(clamp(p.x, -k.z*h.x, k.z*h.x), h.x))*sign(p.y - h.x),
+       p.z-h.y );
+    return min(max(d.x,d.y),0.0) + length(max(d,0.0));
+}
+
+float sdOctogonPrism( in vec3 p, in float r, float h )
+{
+  const vec3 k = vec3(-0.9238795325,   // sqrt(2+sqrt(2))/2 
+                       0.3826834323,   // sqrt(2-sqrt(2))/2
+                       0.4142135623 ); // sqrt(2)-1 
+  // reflections
+  p = abs(p);
+  p.xy -= 2.0*min(dot(vec2( k.x,k.y),p.xy),0.0)*vec2( k.x,k.y);
+  p.xy -= 2.0*min(dot(vec2(-k.x,k.y),p.xy),0.0)*vec2(-k.x,k.y);
+  // polygon side
+  p.xy -= vec2(clamp(p.x, -k.z*r, k.z*r), r);
+  vec2 d = vec2( length(p.xy)*sign(p.y), p.z-h );
+  return min(max(d.x,d.y),0.0) + length(max(d,0.0));
+}
+
 float sdCapsule( vec3 p, vec3 a, vec3 b, float r )
 {
-  vec3 pa = p - a, ba = b - a;
-  float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
-  return length( pa - ba*h ) - r;
+	vec3 pa = p-a, ba = b-a;
+	float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
+	return length( pa - ba*h ) - r;
 }
 
-// by knarkowicz:
-// https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
-vec3 aces(vec3 col) {
-    col *= 0.6f;
-    float a = 2.51f;
-    float b = 0.03f;
-    float c = 2.43f;
-    float d = 0.59f;
-    float e = 0.14f;
-    return clamp((col*(a*col+b))/(col*(c*col+d)+e), 0.0f, 1.0f);
-}
-
-/* 
-// TO DO: i think using something like iq's soft shadow for the glow would remove
-// some of the banding of my naive method 
-float softshadow( in vec3 ro, in vec3 rd, float mint, float maxt, float w )
+float sdRoundCone( in vec3 p, in float r1, float r2, float h )
 {
+    vec2 q = vec2( length(p.xz), p.y );
+    
+    float b = (r1-r2)/h;
+    float a = sqrt(1.0-b*b);
+    float k = dot(q,vec2(-b,a));
+    
+    if( k < 0.0 ) return length(q) - r1;
+    if( k > a*h ) return length(q-vec2(0.0,h)) - r2;
+        
+    return dot(q, vec2(a,b) ) - r1;
+}
+
+float sdRoundCone(vec3 p, vec3 a, vec3 b, float r1, float r2)
+{
+    // sampling independent computations (only depend on shape)
+    vec3  ba = b - a;
+    float l2 = dot(ba,ba);
+    float rr = r1 - r2;
+    float a2 = l2 - rr*rr;
+    float il2 = 1.0/l2;
+    
+    // sampling dependant computations
+    vec3 pa = p - a;
+    float y = dot(pa,ba);
+    float z = y - l2;
+    float x2 = dot2( pa*l2 - ba*y );
+    float y2 = y*y*l2;
+    float z2 = z*z*l2;
+
+    // single square root!
+    float k = sign(rr)*rr*rr*x2;
+    if( sign(z)*a2*z2 > k ) return  sqrt(x2 + z2)        *il2 - r2;
+    if( sign(y)*a2*y2 < k ) return  sqrt(x2 + y2)        *il2 - r1;
+                            return (sqrt(x2*a2*il2)+y*rr)*il2 - r1;
+}
+
+float sdTriPrism( vec3 p, vec2 h )
+{
+    const float k = sqrt(3.0);
+    h.x *= 0.5*k;
+    p.xy /= h.x;
+    p.x = abs(p.x) - 1.0;
+    p.y = p.y + 1.0/k;
+    if( p.x+k*p.y>0.0 ) p.xy=vec2(p.x-k*p.y,-k*p.x-p.y)/2.0;
+    p.x -= clamp( p.x, -2.0, 0.0 );
+    float d1 = length(p.xy)*sign(-p.y)*h.x;
+    float d2 = abs(p.z)-h.y;
+    return length(max(vec2(d1,d2),0.0)) + min(max(d1,d2), 0.);
+}
+
+// vertical
+float sdCylinder( vec3 p, vec2 h )
+{
+    vec2 d = abs(vec2(length(p.xz),p.y)) - h;
+    return min(max(d.x,d.y),0.0) + length(max(d,0.0));
+}
+
+// arbitrary orientation
+float sdCylinder(vec3 p, vec3 a, vec3 b, float r)
+{
+    vec3 pa = p - a;
+    vec3 ba = b - a;
+    float baba = dot(ba,ba);
+    float paba = dot(pa,ba);
+
+    float x = length(pa*baba-ba*paba) - r*baba;
+    float y = abs(paba-baba*0.5)-baba*0.5;
+    float x2 = x*x;
+    float y2 = y*y*baba;
+    float d = (max(x,y)<0.0)?-min(x2,y2):(((x>0.0)?x2:0.0)+((y>0.0)?y2:0.0));
+    return sign(d)*sqrt(abs(d))/baba;
+}
+
+// vertical
+float sdCone( in vec3 p, in vec2 c, float h )
+{
+    vec2 q = h*vec2(c.x,-c.y)/c.y;
+    vec2 w = vec2( length(p.xz), p.y );
+    
+	vec2 a = w - q*clamp( dot(w,q)/dot(q,q), 0.0, 1.0 );
+    vec2 b = w - q*vec2( clamp( w.x/q.x, 0.0, 1.0 ), 1.0 );
+    float k = sign( q.y );
+    float d = min(dot( a, a ),dot(b, b));
+    float s = max( k*(w.x*q.y-w.y*q.x),k*(w.y-q.y)  );
+	return sqrt(d)*sign(s);
+}
+
+float sdCappedCone( in vec3 p, in float h, in float r1, in float r2 )
+{
+    vec2 q = vec2( length(p.xz), p.y );
+    
+    vec2 k1 = vec2(r2,h);
+    vec2 k2 = vec2(r2-r1,2.0*h);
+    vec2 ca = vec2(q.x-min(q.x,(q.y < 0.0)?r1:r2), abs(q.y)-h);
+    vec2 cb = q - k1 + k2*clamp( dot(k1-q,k2)/dot2(k2), 0.0, 1.0 );
+    float s = (cb.x < 0.0 && ca.y < 0.0) ? -1.0 : 1.0;
+    return s*sqrt( min(dot2(ca),dot2(cb)) );
+}
+
+float sdCappedCone(vec3 p, vec3 a, vec3 b, float ra, float rb)
+{
+    float rba  = rb-ra;
+    float baba = dot(b-a,b-a);
+    float papa = dot(p-a,p-a);
+    float paba = dot(p-a,b-a)/baba;
+
+    float x = sqrt( papa - paba*paba*baba );
+
+    float cax = max(0.0,x-((paba<0.5)?ra:rb));
+    float cay = abs(paba-0.5)-0.5;
+
+    float k = rba*rba + baba;
+    float f = clamp( (rba*(x-ra)+paba*baba)/k, 0.0, 1.0 );
+
+    float cbx = x-ra - f*rba;
+    float cby = paba - f;
+    
+    float s = (cbx < 0.0 && cay < 0.0) ? -1.0 : 1.0;
+    
+    return s*sqrt( min(cax*cax + cay*cay*baba,
+                       cbx*cbx + cby*cby*baba) );
+}
+
+// c is the sin/cos of the desired cone angle
+float sdSolidAngle(vec3 pos, vec2 c, float ra)
+{
+    vec2 p = vec2( length(pos.xz), pos.y );
+    float l = length(p) - ra;
+	float m = length(p - c*clamp(dot(p,c),0.0,ra) );
+    return max(l,m*sign(c.y*p.x-c.x*p.y));
+}
+
+float sdOctahedron(vec3 p, float s)
+{
+    p = abs(p);
+    float m = p.x + p.y + p.z - s;
+
+    // exact distance
+    #if 0
+    vec3 o = min(3.0*p - m, 0.0);
+    o = max(6.0*p - m*2.0 - o*3.0 + (o.x+o.y+o.z), 0.0);
+    return length(p - s*o/(o.x+o.y+o.z));
+    #endif
+    
+    // exact distance
+    #if 1
+ 	vec3 q;
+         if( 3.0*p.x < m ) q = p.xyz;
+    else if( 3.0*p.y < m ) q = p.yzx;
+    else if( 3.0*p.z < m ) q = p.zxy;
+    else return m*0.57735027;
+    float k = clamp(0.5*(q.z-q.y+s),0.0,s); 
+    return length(vec3(q.x,q.y-s+k,q.z-k)); 
+    #endif
+    
+    // bound, not exact
+    #if 0
+	return m*0.57735027;
+    #endif
+}
+
+float sdPyramid( in vec3 p, in float h )
+{
+    float m2 = h*h + 0.25;
+    
+    // symmetry
+    p.xz = abs(p.xz);
+    p.xz = (p.z>p.x) ? p.zx : p.xz;
+    p.xz -= 0.5;
+	
+    // project into face plane (2D)
+    vec3 q = vec3( p.z, h*p.y - 0.5*p.x, h*p.x + 0.5*p.y);
+   
+    float s = max(-q.x,0.0);
+    float t = clamp( (q.y-0.5*p.z)/(m2+0.25), 0.0, 1.0 );
+    
+    float a = m2*(q.x+s)*(q.x+s) + q.y*q.y;
+	float b = m2*(q.x+0.5*t)*(q.x+0.5*t) + (q.y-m2*t)*(q.y-m2*t);
+    
+    float d2 = min(q.y,-q.x*m2-q.y*0.5) > 0.0 ? 0.0 : min(a,b);
+    
+    // recover 3D and scale, and add sign
+    return sqrt( (d2+q.z*q.z)/m2 ) * sign(max(q.z,-p.y));;
+}
+
+// la,lb=semi axis, h=height, ra=corner
+float sdRhombus(vec3 p, float la, float lb, float h, float ra)
+{
+    p = abs(p);
+    vec2 b = vec2(la,lb);
+    float f = clamp( (ndot(b,b-2.0*p.xz))/dot(b,b), -1.0, 1.0 );
+	vec2 q = vec2(length(p.xz-0.5*b*vec2(1.0-f,1.0+f))*sign(p.x*b.y+p.z*b.x-b.x*b.y)-ra, p.y-h);
+    return min(max(q.x,q.y),0.0) + length(max(q,0.0));
+}
+
+float sdHorseshoe( in vec3 p, in vec2 c, in float r, in float le, vec2 w )
+{
+    p.x = abs(p.x);
+    float l = length(p.xy);
+    p.xy = mat2(-c.x, c.y, 
+              c.y, c.x)*p.xy;
+    p.xy = vec2((p.y>0.0 || p.x>0.0)?p.x:l*sign(-c.x),
+                (p.x>0.0)?p.y:l );
+    p.xy = vec2(p.x,abs(p.y-r))-vec2(le,0.0);
+    
+    vec2 q = vec2(length(max(p.xy,0.0)) + min(0.0,max(p.x,p.y)),p.z);
+    vec2 d = abs(q) - w;
+    return min(max(d.x,d.y),0.0) + length(max(d,0.0));
+}
+
+float sdU( in vec3 p, in float r, in float le, vec2 w )
+{
+    p.x = (p.y>0.0) ? abs(p.x) : length(p.xy);
+    p.x = abs(p.x-r);
+    p.y = p.y - le;
+    float k = max(p.x,p.y);
+    vec2 q = vec2( (k<0.0) ? -k : length(max(p.xy,0.0)), abs(p.z) ) - w;
+    return length(max(q,0.0)) + min(max(q.x,q.y),0.0);
+}
+
+//------------------------------------------------------------------
+
+vec2 opU( vec2 d1, vec2 d2 )
+{
+	return (d1.x<d2.x) ? d1 : d2;
+}
+
+//------------------------------------------------------------------
+
+
+
+//------------------------------------------------------------------
+
+vec2 map( in vec3 pos )
+{
+    vec2 res = vec2( pos.y, 0.0 );
+
+    // bounding box
+    if( sdBox( pos-vec3(-2.0,0.3,0.25),vec3(0.3,0.3,1.0) )<res.x )
+    {
+      res = opU( res, vec2( sdSphere(    pos-vec3(-2.0,0.25, 0.0), 0.25 ), 26.9 ) );
+	  res = opU( res, vec2( sdRhombus(  (pos-vec3(-2.0,0.25, 1.0)).xzy, 0.15, 0.25, 0.04, 0.08 ),17.0 ) );
+    }
+
+    // bounding box
+    if( sdBox( pos-vec3(0.0,0.3,-1.0),vec3(0.35,0.3,2.5) )<res.x )
+    {
+	res = opU( res, vec2( sdCappedTorus((pos-vec3( 0.0,0.30, 1.0))*vec3(1,-1,1), vec2(0.866025,-0.5), 0.25, 0.05), 25.0) );
+    res = opU( res, vec2( sdBoxFrame(    pos-vec3( 0.0,0.25, 0.0), vec3(0.3,0.25,0.2), 0.025 ), 16.9 ) );
+	res = opU( res, vec2( sdCone(        pos-vec3( 0.0,0.45,-1.0), vec2(0.6,0.8),0.45 ), 55.0 ) );
+    res = opU( res, vec2( sdCappedCone(  pos-vec3( 0.0,0.25,-2.0), 0.25, 0.25, 0.1 ), 13.67 ) );
+    res = opU( res, vec2( sdSolidAngle(  pos-vec3( 0.0,0.00,-3.0), vec2(3,4)/5.0, 0.4 ), 49.13 ) );
+    }
+
+    // bounding box
+    if( sdBox( pos-vec3(1.0,0.3,-1.0),vec3(0.35,0.3,2.5) )<res.x )
+    {
+	res = opU( res, vec2( sdTorus(      (pos-vec3( 1.0,0.30, 1.0)).xzy, vec2(0.25,0.05) ), 7.1 ) );
+    res = opU( res, vec2( sdBox(         pos-vec3( 1.0,0.25, 0.0), vec3(0.3,0.25,0.1) ), 3.0 ) );
+    res = opU( res, vec2( sdCapsule(     pos-vec3( 1.0,0.00,-1.0),vec3(-0.1,0.1,-0.1), vec3(0.2,0.4,0.2), 0.1  ), 31.9 ) );
+	res = opU( res, vec2( sdCylinder(    pos-vec3( 1.0,0.25,-2.0), vec2(0.15,0.25) ), 8.0 ) );
+    res = opU( res, vec2( sdHexPrism(    pos-vec3( 1.0,0.2,-3.0), vec2(0.2,0.05) ), 18.4 ) );
+    }
+
+    // bounding box
+    if( sdBox( pos-vec3(-1.0,0.35,-1.0),vec3(0.35,0.35,2.5))<res.x )
+    {
+	res = opU( res, vec2( sdPyramid(    pos-vec3(-1.0,-0.6,-3.0), 1.0 ), 13.56 ) );
+	res = opU( res, vec2( sdOctahedron( pos-vec3(-1.0,0.15,-2.0), 0.35 ), 23.56 ) );
+    res = opU( res, vec2( sdTriPrism(   pos-vec3(-1.0,0.15,-1.0), vec2(0.3,0.05) ),43.5 ) );
+    res = opU( res, vec2( sdEllipsoid(  pos-vec3(-1.0,0.25, 0.0), vec3(0.2, 0.25, 0.05) ), 43.17 ) );
+    res = opU( res, vec2( sdHorseshoe(  pos-vec3(-1.0,0.25, 1.0), vec2(cos(1.3),sin(1.3)), 0.2, 0.3, vec2(0.03,0.08) ), 11.5 ) );
+    }
+
+    // bounding box
+    if( sdBox( pos-vec3(2.0,0.3,-1.0),vec3(0.35,0.3,2.5) )<res.x )
+    {
+    res = opU( res, vec2( sdOctogonPrism(pos-vec3( 2.0,0.2,-3.0), 0.2, 0.05), 51.8 ) );
+    res = opU( res, vec2( sdCylinder(    pos-vec3( 2.0,0.14,-2.0), vec3(0.1,-0.1,0.0), vec3(-0.2,0.35,0.1), 0.08), 31.2 ) );
+	res = opU( res, vec2( sdCappedCone(  pos-vec3( 2.0,0.09,-1.0), vec3(0.1,0.0,0.0), vec3(-0.2,0.40,0.1), 0.15, 0.05), 46.1 ) );
+    res = opU( res, vec2( sdRoundCone(   pos-vec3( 2.0,0.15, 0.0), vec3(0.1,0.0,0.0), vec3(-0.1,0.35,0.1), 0.15, 0.05), 51.7 ) );
+    res = opU( res, vec2( sdRoundCone(   pos-vec3( 2.0,0.20, 1.0), 0.2, 0.1, 0.3 ), 37.0 ) );
+    }
+    
+    return res;
+}
+
+// https://iquilezles.org/articles/boxfunctions
+vec2 iBox( in vec3 ro, in vec3 rd, in vec3 rad ) 
+{
+    vec3 m = 1.0/rd;
+    vec3 n = m*ro;
+    vec3 k = abs(m)*rad;
+    vec3 t1 = -n - k;
+    vec3 t2 = -n + k;
+	return vec2( max( max( t1.x, t1.y ), t1.z ),
+	             min( min( t2.x, t2.y ), t2.z ) );
+}
+
+vec2 raycast( in vec3 ro, in vec3 rd )
+{
+    vec2 res = vec2(-1.0,-1.0);
+
+    float tmin = 1.0;
+    float tmax = 20.0;
+
+    // raytrace floor plane
+    float tp1 = (0.0-ro.y)/rd.y;
+    if( tp1>0.0 )
+    {
+        tmax = min( tmax, tp1 );
+        res = vec2( tp1, 1.0 );
+    }
+    //else return res;
+    
+    // raymarch primitives   
+    vec2 tb = iBox( ro-vec3(0.0,0.4,-0.5), rd, vec3(2.5,0.41,3.0) );
+    if( tb.x<tb.y && tb.y>0.0 && tb.x<tmax)
+    {
+        //return vec2(tb.x,2.0);
+        tmin = max(tb.x,tmin);
+        tmax = min(tb.y,tmax);
+
+        float t = tmin;
+        for( int i=0; i<70 && t<tmax; i++ )
+        {
+            vec2 h = map( ro+rd*t );
+            if( abs(h.x)<(0.0001*t) )
+            { 
+                res = vec2(t,h.y); 
+                break;
+            }
+            t += h.x;
+        }
+    }
+    
+    return res;
+}
+
+// https://iquilezles.org/articles/rmshadows
+float calcSoftshadow( in vec3 ro, in vec3 rd, in float mint, in float tmax )
+{
+    // bounding volume
+    float tp = (0.8-ro.y)/rd.y; if( tp>0.0 ) tmax = min( tmax, tp );
+
     float res = 1.0;
     float t = mint;
-    for( int i=0; i<256 && t<maxt; i++ )
+    for( int i=0; i<24; i++ )
     {
-        float h = map(ro + t*rd);
-        res = min( res, h/(w*t) );
-        t += clamp(h, 0.005, 0.50);
-        if( res<-1.0 || t>maxt ) break;
+		float h = map( ro + rd*t ).x;
+        float s = clamp(8.0*h/t,0.0,1.0);
+        res = min( res, s );
+        t += clamp( h, 0.01, 0.2 );
+        if( res<0.004 || t>tmax ) break;
     }
-    res = max(res,-1.0);
-    return 0.25*(1.0+res)*(1.0+res)*(2.0-res);
-}*/
+    res = clamp( res, 0.0, 1.0 );
+    return res*res*(3.0-2.0*res);
+}
 
-// Common above
-
-// MAin below
-// Barber Pole effect
-
-// Controls:
-// Number keys change the mode
-// - Press 1: mouse rotates camera
-// - Press 2: mouse rotates second polarization filter
-// - Press 3: mouse pans camera along the tube  (default)
-// - Press 4: mouse moves camera closer or farther
-
-
-// Explanation:
-// This is a visualization of the barber pole polarization effect.
-// Light of different wavelengths goes through a water and sugar solution.
-// Sugar twists the plane of polarization (the direction these waves oscillate)
-// along the tube. The rate of this twist depends on the wavelength of each wave.
-// Therefore, using a linear polarizer at each end of the tube, white light
-// turns different colors depending on the angles of the polarizers 
-// (and the length of the tube)
-// This is because the intensity of each wavelength is reduced by the squared cosine 
-// of its angle with respect to the second filter - see here how the waves that are more aligned 
-// to the second filter end up with a higher amplitudde
-
-// > See https://www.youtube.com/watch?v=QCX62YJCmGk for a much more detailed explanation
-
-// ofc most constants here (twisting rate, frequency ratios...) are made up and not physically based at all
-// by default only 3 wavelengths are shown for clarity, in reality the spectrum is continuous
-
-// Acks:
-// Started From template "RayMarching starting point" by Martijn Steinrucken
-// The sine wave SDF is from oneshade (https://www.shadertoy.com/view/7djSzK)
-// ^ I tried to make one then quickly realized it is not as simple as it seems
-// The twisting of the plane and many other functions are from iq (https://iquilezles.org/articles/distfunctions/)
-// the beautiful grids are from https://www.shadertoy.com/view/mdVfWw
-// -------------------------------------------------
-
-
-// add wls here, with wl_idx in 0-1 indicating from blue (380) to red (700 something) 
-#define N_WLS 3
-// ^ Try modifying this, but Don't go higher than the array in line 43
-
-//#define NO_TWIST
-// ^uncomment to remove sugar, aka stop the waves from twisting
-
-
-// -------------------------------------------------
-// drawing options:
-#define FREQ_MULT 1.5
-#ifdef NO_TWIST
-#define TWIST_MULT 0.
+// https://iquilezles.org/articles/normalsSDF
+vec3 calcNormal( in vec3 pos )
+{
+#if 0
+    // do NOT call map() many times inside calcNormal()
+    vec2 e = vec2(1.0,-1.0)*0.5773*0.0005;
+    return normalize( e.xyy*map( pos + e.xyy ).x + 
+					  e.yyx*map( pos + e.yyx ).x + 
+					  e.yxy*map( pos + e.yxy ).x + 
+					  e.xxx*map( pos + e.xxx ).x );
 #else
-#define TWIST_MULT 1.
-#endif
-
-// Draw dots in the beginning of the wave:
-#define DOTS 
-#define CYLINDER
-
-// -------------------------------------------------
-// Marching parameters:
-// ideally, STEP_DECREASE should be 1. (faster marching)
-// this can only be done if sdfs are not distorted 
-// (my sdWave thing is a little bc of the twisting)
-// https://iquilezles.org/articles/distfunctions/
-#define STEP_DECREASE .91
-#define MAX_STEPS 100
-#define MAX_DIST 20.
-#define SURF_DIST .01
-#define TAU 6.283185
-    
-
-#define TIME iTime
-
-
-float dot2(vec3 a) {return dot(a,a);} 
-mat2 Rot(float a) {
-    float s=sin(a), c=cos(a);
-    return mat2(c, -s, s, c);
-}
-
-float sdBox(vec3 p, vec3 s) {
-    p = abs(p)-s;
-	return length(max(p, 0.))+min(max(p.x, max(p.y, p.z)), 0.);
-}
-// twists around y
-vec3 opTwistX( in vec3 p, float k )
-{
-    float c = cos(k*p.x);
-    float s = sin(k*p.x);
-    mat2  m = mat2(c,-s,s,c);
-    vec3  q = vec3(p.x, m*p.yz);
-    return q;
-}
-
-// Wave along X axis
-// n and h define the plane of the wave (normal and height along that normal)
-// freq and amp, the freq and amplitude of the wave
-float sdWave(vec3 p, float h, vec3 n, float freq, float amp) {
-    float dPlane = dot(p,n) + h; 
-    // The distance to the plane in which the sine lives
-    // if undistorted, then we can compute the distance of that closest point to the sine 
-    // and use pythagoras to find the full 3D distance..
-    vec3 pPlane = p - n * dPlane; // point in plane
-    
-    vec2 uv = pPlane.xy + vec2(TIME,0.); // animate
-    
-    float dSine = sdSine(uv, freq, amp); // 2D nice dist to sine
-    
-    dSine = sqrt(dPlane*dPlane+dSine*dSine) - .02; // pythagoras, -.02 adds a bit of thickness
-    dSine = max(dSine, p.x-x_range.x); // cut off an end
-    dSine = max(dSine, -p.x+x_range.y); // cut off an end
-    
-#ifdef DOTS
-    float y = amp*sin(freq * PI * TIME); 
-    dSine = min(dSine, // union of dSine (the wave) and
-                length(p-vec3(x_range.x, y, 0.))-.08 // a dot
-            );
-    // another dot at the end of the wave segment (looks better without this i think):
-    //float phi = (x_range.y-x_range.x) * freq*PI; // phase shift depends on distance
-    //y = amp*sin(freq * PI * TIME - phi);
-    //dSine = min(dSine, // union of dSine (the wave) and
-    //            length(p-vec3(x_range.y, y, 0.))-.08 // a dot
-    //        ); // uncomment to add back second set of dots
-            
-#endif
-    return dSine; 
-}
- 
-
-// x is distance
-// y is ID (0. for blue, 1. for red, etc)
-// [mutating] // bc it changes minDists
-vec2 GetDist(vec3 p, in float filter_theta, inout float minDists[N_WLS]) {
-    float d = 1000.;//
-    float id =0.;
-    
-    for (int i=0;i<N_WLS;i++) {
-        float t = wl_idx[i]; // 0 blue 1 red
-        float twist = TWIST_MULT*mix(min_twist, max_twist, t);
-        float freq  = FREQ_MULT*mix(max_f, min_f, t);
-        vec3 q = p;
-#if REPEAT_DOMAIN == 1
-        float s = 4.;
-        q.yz = q.yz - s*round(q.yz/s);
-#endif
-        q = opTwistX(q, twist);
-        float d2 =sdWave(q, 0., vec3(0.,0.,1.), freq, 1.);
-        // record the minimum dist to this wave along this ray, for the glow effect:
-        minDists[i] = min(minDists[i], d2); 
-        if (d2<d) {
-            d= d2;
-            id = t;
-        }
-#if VIEW >= 2
-        // Compute the waves coming out of the second filter (linear pol)
-        // same as twist function, but using only the pos of the second filter instead of the x pos:
-        if (filter_theta < -PI/2.) filter_theta += 2.*PI;
-        float s = sin(filter_theta-PI/2.), 
-              c = cos(filter_theta-PI/2.);   
-              
-        mat2  m = mat2(c,-s,s,c);
-        // amplitude is the cosine of the angle between the twist and the filter orientation
-        float angle = twist*x_range.y - filter_theta+PI/2.;
-        float amp = cos(angle) * cos(angle);
-        amp = max(0.000001,amp);//Remove singularity when amp=0 (perfectly perpendicular filters)
-        
-        //float amp = abs(sin(-twist*x_range.y+filter_theta));
-        q = vec3(p.x-x_range.y, m*p.yz);
-        d2 = sdWave(q, 0., vec3(0.,0.,1.), freq, amp);
-        minDists[i] = min(minDists[i], d2); 
-
-        if (d2<d) {
-            d= d2;
-            id = t;
-        }
-#endif
-    }
-    return vec2(d,id);
-}
-
-// x is distance from ro, 
-// y is minimum distance of all of the steps,
-// z is id of closest
-// [mutating]
-vec3 intersect( in vec3 ro, in vec3 rd, in float filter_theta, inout float minDists[N_WLS] )
-{
-    float id = -1.;
-	const float maxd = MAX_DIST;
-	float h = 1.0;
-    float t = 0.0;
-    // opt: march up to the bounding box
-    float mind = MAX_DIST;
-    
-    // right wall plane at x_range.y-4.
-    vec3 p = ro;
-    
-    for( int i=0; i<MAX_STEPS; i++ )
+    // instead put it only once and in a loop to prevet
+    // code expansion - inspired by tdhooper and klems - a way to prevent the compiler from inlining map() 4 times
+    vec3 n = vec3(0.0);
+    for( int i=0; i<4; i++ )
     {
-        if( h<SURF_DIST || t>maxd || p.x < x_range.y-6. ) break;
-        p = ro+rd*t;
-	    vec2 dist =  GetDist( p,filter_theta, minDists );
-        h = dist.x; id = dist.y;
-        t += h * STEP_DECREASE;
-        mind = min(abs(h), mind);
+        vec3 e = 0.5773*(2.0*vec3((((i+3)>>1)&1),((i>>1)&1),(i&1))-1.0);
+        n += e*map(pos+0.0005*e).x;
+      //if( n.x+n.y+n.z>100.0 ) break;
+    }
+    return normalize(n);
+#endif    
+}
+
+// https://iquilezles.org/articles/nvscene2008/rwwtt.pdf
+float calcAO( in vec3 pos, in vec3 nor )
+{
+	float occ = 0.0;
+    float sca = 1.0;
+    for( int i=0; i<5; i++ )
+    {
+        float h = 0.01 + 0.12*float(i)/4.0;
+        float d = map( pos + h*nor ).x;
+        occ += (h-d)*sca;
+        sca *= 0.95;
+        if( occ>0.35 ) break;
+    }
+    return clamp( 1.0 - 3.0*occ, 0.0, 1.0 ) * (0.5+0.5*nor.y);
+}
+
+// https://iquilezles.org/articles/checkerfiltering
+float checkersGradBox( in vec2 p, in vec2 dpdx, in vec2 dpdy )
+{
+    // filter kernel
+    vec2 w = abs(dpdx)+abs(dpdy) + 0.001;
+    // analytical integral (box filter)
+    vec2 i = 2.0*(abs(fract((p-0.5*w)*0.5)-0.5)-abs(fract((p+0.5*w)*0.5)-0.5))/w;
+    // xor pattern
+    return 0.5 - 0.5*i.x*i.y;                  
+}
+
+vec3 render( in vec3 ro, in vec3 rd, in vec3 rdx, in vec3 rdy )
+{ 
+    // background
+    vec3 col = vec3(0.7, 0.7, 0.9) - max(rd.y,0.0)*0.3;
+    
+    // raycast scene
+    vec2 res = raycast(ro,rd);
+    float t = res.x;
+	float m = res.y;
+    if( m>-0.5 )
+    {
+        vec3 pos = ro + t*rd;
+        vec3 nor = (m<1.5) ? vec3(0.0,1.0,0.0) : calcNormal( pos );
+        vec3 ref = reflect( rd, nor );
+        
+        // material        
+        col = 0.2 + 0.2*sin( m*2.0 + vec3(0.0,1.0,2.0) );
+        float ks = 1.0;
+        
+        if( m<1.5 )
+        {
+            // project pixel footprint into the plane
+            vec3 dpdx = ro.y*(rd/rd.y-rdx/rdx.y);
+            vec3 dpdy = ro.y*(rd/rd.y-rdy/rdy.y);
+
+            float f = checkersGradBox( 3.0*pos.xz, 3.0*dpdx.xz, 3.0*dpdy.xz );
+            col = 0.15 + f*vec3(0.05);
+            ks = 0.4;
+        }
+
+        // lighting
+        float occ = calcAO( pos, nor );
+        
+		vec3 lin = vec3(0.0);
+
+        // sun
+        {
+            vec3  lig = normalize( vec3(-0.5, 0.4, -0.6) );
+            vec3  hal = normalize( lig-rd );
+            float dif = clamp( dot( nor, lig ), 0.0, 1.0 );
+          //if( dif>0.0001 )
+        	      dif *= calcSoftshadow( pos, lig, 0.02, 2.5 );
+			float spe = pow( clamp( dot( nor, hal ), 0.0, 1.0 ),16.0);
+                  spe *= dif;
+                  spe *= 0.04+0.96*pow(clamp(1.0-dot(hal,lig),0.0,1.0),5.0);
+                //spe *= 0.04+0.96*pow(clamp(1.0-sqrt(0.5*(1.0-dot(rd,lig))),0.0,1.0),5.0);
+            lin += col*2.20*dif*vec3(1.30,1.00,0.70);
+            lin +=     5.00*spe*vec3(1.30,1.00,0.70)*ks;
+        }
+        // sky
+        {
+            float dif = sqrt(clamp( 0.5+0.5*nor.y, 0.0, 1.0 ));
+                  dif *= occ;
+            float spe = smoothstep( -0.2, 0.2, ref.y );
+                  spe *= dif;
+                  spe *= 0.04+0.96*pow(clamp(1.0+dot(nor,rd),0.0,1.0), 5.0 );
+          //if( spe>0.001 )
+                  spe *= calcSoftshadow( pos, ref, 0.02, 2.5 );
+            lin += col*0.60*dif*vec3(0.40,0.60,1.15);
+            lin +=     2.00*spe*vec3(0.40,0.60,1.30)*ks;
+        }
+        // back
+        {
+        	float dif = clamp( dot( nor, normalize(vec3(0.5,0.0,0.6))), 0.0, 1.0 )*clamp( 1.0-pos.y,0.0,1.0);
+                  dif *= occ;
+        	lin += col*0.55*dif*vec3(0.25,0.25,0.25);
+        }
+        // sss
+        {
+            float dif = pow(clamp(1.0+dot(nor,rd),0.0,1.0),2.0);
+                  dif *= occ;
+        	lin += col*0.25*dif*vec3(1.00,1.00,1.00);
+        }
+        
+		col = lin;
+
+        col = lerp( col, vec3(0.7,0.7,0.9), 1.0-exp( -0.0001*t*t*t ) );
     }
 
-    if( t>maxd || p.x < x_range.y-6.) t=-1.0;
-	
-    return vec3(t, mind, id);
+	return vec3( clamp(col,0.0,1.0) );
 }
 
-// warning: don't use this with the glowy global array
-
-/*
-[mutating]
-vec3 GetNormal( in vec3 pos )
+mat3 setCamera( in vec3 ro, in vec3 ta, float cr )
 {
-    vec3 eps = vec3(0.01,0.0,0.0);
-
-	return normalize( vec3(
-           GetDist(pos+eps.xyy).x - GetDist(pos-eps.xyy).x,
-           GetDist(pos+eps.yxy).x - GetDist(pos-eps.yxy).x,
-           GetDist(pos+eps.yyx).x - GetDist(pos-eps.yyx).x ) );
-}*/
-
-
-vec3 GetRayDir(vec2 uv, vec3 p, vec3 l, float z) {
-    vec3 
-        f = normalize(l-p),
-        r = normalize(cross(vec3(0,1,0), f)),
-        u = cross(f,r),
-        c = f*z,
-        i = c + uv.x*r + uv.y*u;
-    return normalize(i);
+	vec3 cw = normalize(ta-ro);
+	vec3 cp = vec3(sin(cr), cos(cr),0.0);
+	vec3 cu = normalize( cross(cw,cp) );
+	vec3 cv =          ( cross(cu,cw) );
+    return mat3( cu, cv, cw );
 }
 
-
-// Reads from one of our variables ([0:4], 0). Just for interaction
-vec4 read(ivec2 id) {
-    return .5;// TEMP texelFetch(iChannel0, id, 0);
-}
-
-
-//[mutating]
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
-    
+    vec2 mo = iMouse.xy/iResolution.xy;
+	float time = 32.0 + iTime*1.5;
 
-    fragColor = vec4(iTime, iTime*2., iTime/3., 1.0);
-    return;
-        
-    float minDists[N_WLS]; // for cheap glowy thing
+    // camera	
+    vec3 ta = vec3( 0.25, -0.75, -0.75 );
+    vec3 ro = ta + vec3( 4.5*cos(0.1*time + 7.0*mo.x), 2.2, 4.5*sin(0.1*time + 7.0*mo.x) );
+    // camera-to-world transformation
+    mat3 ca = setCamera( ro, ta, 0.0 );
 
-    vec2 uv = (fragCoord-.5*iResolution.xy)/iResolution.y;
-	vec2 m = read(ivec2(1,0)).xy;//iMouse.xy/iResolution.xy;
-    // initialize glowy vector:
-    for (int i=0;i<N_WLS;i++) { minDists[i] = MAX_DIST; }
-    
-    vec3 ro = vec3(0, 3, -3);
-
-#if MOUSE_MODE == 1
-    m = vec2(.5);
-#elif MOUSE_MODE == 2
-    m = vec2(.10,-.40);
-#endif
-    
-    // ----------------------
-    // Camera movement:
-#if MOUSE_MODE == 3
-    // move cam back or front
-    ro *= 3. * (max(read(ivec2(4,0)).y, .01)); 
+    vec3 tot = vec3(0.0);
+#if AA>1
+    for( int m=0; m<AA; m++ )
+    for( int n=0; n<AA; n++ )
+    {
+        // pixel coordinates
+        vec2 o = vec2(float(m),float(n)) / float(AA) - 0.5;
+        vec2 p = (2.0*(fragCoord+o)-iResolution.xy)/iResolution.y;
+#else    
+        vec2 p = (2.0*fragCoord-iResolution.xy)/iResolution.y;
 #endif
 
-    ro.yz = ro.yz * Rot(-m.y*PI+1.);
-    ro.xz = ro.xz * Rot(-m.x*TAU);
-
-    vec3 rd = GetRayDir(uv, ro, vec3(0,0.,0), 1.);
-    vec3 col = vec3(0);
-    
-    ro.x -= 2.; // move cam to right a bit
-    
-    #if VIEW >= 1
-    ro.x -= -x_range.y-1.;//28.;
-    #endif
-    #if VIEW == 3
-    ro.x -= 1.8; 
-    ro.x -= mix(-11.8, 2., read(ivec2(3,0)).x);
-    ro.x = max(ro.x, x_range.y-5.9); // keep the cam bounded before final wall
-    #endif
-    // ----------------------
-    // Filter rotation:
+        // focal length
+        const float fl = 2.5;
         
-    float filter_theta=3.*PI/4.;
-    
-    mat2 filter_R = mat2 (0.,-1.,1,0.);
-#if MOUSE_MODE == 2
-    filter_theta = atan(m.y-.5, m.x-.5);
-#elif MOUSE_MODE == 3
-    vec2 th = read(ivec2(2,0)).xy;
-    filter_theta = -atan(th.y-.5, th.x-.5);
+        // ray direction
+        vec3 rd = ca * normalize( vec3(p,fl) );
+
+         // ray differentials
+        vec2 px = (2.0*(fragCoord+vec2(1.0,0.0))-iResolution.xy)/iResolution.y;
+        vec2 py = (2.0*(fragCoord+vec2(0.0,1.0))-iResolution.xy)/iResolution.y;
+        vec3 rdx = ca * normalize( vec3(px,fl) );
+        vec3 rdy = ca * normalize( vec3(py,fl) );
+        
+        // render	
+        vec3 col = render( ro, rd, rdx, rdy );
+
+        // gain
+        // col = col*3.0/(2.5+col);
+        
+		// gamma
+        col = pow( col, vec3(0.4545) );
+
+        tot += col;
+#if AA>1
+    }
+    tot /= float(AA*AA);
 #endif
-    float s = sin(filter_theta), 
-          c = cos(filter_theta);
-    filter_R = mat2(c,-s,s,c);
-    // ----------------------
     
-    vec3 intersection = intersect(ro, rd, filter_theta, minDists);
-    float d = intersection.x; // dist origin->surface (-1 if no intersect)
-    float closest_d = intersection.y; // for missing rays, how close did they get?
-    float id = intersection.z; // id of closest thing
-    
-    // Shade the waves:
-    vec3 p = ro+rd*MAX_DIST; // p of intersection
-    float t = max(0., closest_d); // closest distance between ray & surface
-    if (d>0.) { // did actually intersect
-        t = 0.;
-        p = ro+rd*d;
-        
-    }
-    col = .9*vec3(.9,.9,.99) 
-          * exp(-68.*t); // this is to shade even grazing rays (kind of AA)   
-   
- #define DRAW_FILTERS
- #ifdef DRAW_FILTERS
-    { // raytrace tube ends
-        float tPlane = plaIntersect(ro,rd,vec4(1., 0., 0., -x_range.x));
-        
-        
-        if (tPlane < MAX_DIST*5. && tPlane>0.) {
-            vec3 pPlane=ro+rd*tPlane;
-            vec2 ddx = dFdx(pPlane.yz), ddy = dFdy(pPlane.yz);
-            
-            float grid = pristineGrid( pPlane.yz, ddx, ddy, vec2(0.,0.01));
-            
-            // "lighting" for the grid:
-            grid *= 30.*exp(-.56*length(pPlane.yz)); 
-            
-            col += .1*vec3(1.,1.,.8)*grid*(exp(-.02*tPlane)); 
-        }
-    }
-    { // Second grid
-        float tPlane = plaIntersect(ro,rd,vec4(1., 0., 0., -x_range.y));
-        
-        if (tPlane < MAX_DIST*5. && tPlane>0.){
-            vec3 pPlane=ro+rd*tPlane;
-            pPlane.yz = filter_R * pPlane.yz; // rotate the second filter
-            
-            vec2 ddx = dFdx(pPlane.yz), ddy = dFdy(pPlane.yz);
-            
-            float grid = pristineGrid( pPlane.yz, ddx, ddy, vec2(0.01,0.));
-            
-            // "lighting" for the grid:
-            grid *= 30.*exp(-.56*length(pPlane.yz)); 
-            
-            col += .1*vec3(1.,1.,.8)*grid*(exp(-.02*tPlane)); 
-        }
-        
-    }
- #endif
- #ifdef CYLINDER
- {
-     vec4 cyl = cylIntersect( ro, rd, vec3(x_range.x,0.,0.), 
-                         vec3(x_range.y,0.,0.), 1.6);
-     
-     float t = cyl.x;
-     if (t>0.) {
-         vec3 l = vec3(.7,1.,1.); // bluish
-         vec3 n = normalize(cyl.yzw);
-         #if 1
-         l *= pow(1.-dot(n.yz, normalize(-rd.yz)),5.);//highlight the edge
-         l *= 1.*smoothstep(.0,.3,dot(n.yz,normalize(-rd.yz))); // AA the edge 
-         #else
-         // also accounts for x normal (i think the other looks better)
-         l *= pow(1.-dot(n, normalize(-rd)),11.);//highlight the edge
-         l *= 3.*smoothstep(.0,.3,dot(n,normalize(-rd))); // AA the edge 
-         #endif
-         
-         col += l;
-     }
- }
- #endif
- 
-    // cheap glow using an imaginary extinction and the minimum distance found along each ray
-    for (int i=0; i<N_WLS; i++){ // each wl has a color, and a min distance to this ray
-        vec3 glow = normalize(rgb_wl(wl_idx[i]));
-        float t = max(minDists[i],.0);
-        col += .6*glow * exp(-15. * t);
-        
-    } 
- #if VIEW >= 2
- 
-    { // raytrace final wall
-        float tPlane = plaIntersect(ro,rd,vec4(-1., 0., 0., x_range.y-6.));
-        if (tPlane < MAX_DIST*5. && tPlane>0.) {
-            vec3 pPlane=ro+rd*tPlane;
-            
-            // Get final color (avg of wls.)
-            vec3 c = vec3(0.);
-            
-            vec2 ddx = dFdx(pPlane.yz), ddy = dFdy(pPlane.yz);
-            float grid = pristineGrid( pPlane.yz, ddx, ddy, vec2(0.01,0.01));
-            c += grid;
-
-            if (filter_theta < -PI/2.) filter_theta += 2.*PI;
-            for (int i=0;i<N_WLS;i++) {
-
-                float t = wl_idx[i]; // 0 blue 1 red
-                float twist = TWIST_MULT*mix(min_twist, max_twist, t);
-                // amplitude is the cosine of the angle between the twist and the filter orientation
-                float angle = twist*x_range.y - filter_theta+PI/2.;
-                float amp = cos(angle) * cos(angle);
-                
-                c += amp*normalize(rgb_wl(wl_idx[i]));
-            }
-            c /= float(N_WLS);
-            c = clamp(c,0.,1.);
-            col += 3.*c * exp(-.70*length(pPlane.zy));
-        }
-            
-    }
- #endif
- 
-    //col =1.1* col/(1.+col); // reinhard (dont like it here) 
-    col = aces(1.*col);
-    col = pow(col, vec3(1./2.2)); // gamma
-    fragColor = vec4(col,1.0);
+    fragColor = vec4( tot, 1.0 );
 }
+
     // ---------------- User Code Ends Here ------------------
 
     __init() {
         // SPECIFIC INITIALIZATION HERE:
-        x_range = float2(0, 10.);
+        // x_range = float2(0, 10.);
 
-        min_f = 0.9;
-        max_f = 2.; // min and max freq
-        min_twist = -.34;
-        max_twist = -.1;
+        // min_f = 0.9;
+        // max_f = 2.; // min and max freq
+        // min_twist = -.34;
+        // max_twist = -.1;
 
-        wl_idx = float[11](
+        /*wl_idx = float[11](
             0.01, // blue
             0.99, // red
             0.33, // green
@@ -943,7 +994,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
             0.7,
             0.65,
             0.85 // red
-        );
+        );*/
     }
     static This getDefault() { return This(); }
 }
