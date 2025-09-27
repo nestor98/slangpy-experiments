@@ -4,8 +4,7 @@
 // the final slang will be a sandwich with shadertoy1.slang + user code (beginning of shadertoy2) + shadertoy2.slang
 
 // some missing defines
-static const int HW_PERFORMANCE = 1; 
-
+static const int HW_PERFORMANCE = 1;
 
 // ----- original header comments -----
 
@@ -34,9 +33,16 @@ cbuffer ShaderToyUniforms
     //
     // TODO: We can and should fill in the rest over time.
     //
-    float4 iMouse;
+    float4 iMouse, 
+           iMouseRight, // right button mouse position
+           iMouseShift, // some additional mouse positions of last time these keys were down
+           iMouseCtrl,
+           iMouseAlt;
     float2 iResolution;
     float iTime;
+
+    float g_twist_mult;
+    float g_freq_mult;
 };
 
 // In addition to the above parameters that use ordinary data types,
@@ -221,13 +227,18 @@ float fract(float value)
 
 
 // a * b in GLSL!
-float2 mul(float2 b, mat2 a) {
-    return mul(b, a.data);
-}
+// float2 mul(float2 b, mat2 a) {
+//     return mul(b, a.data);
+// }
 
 float2 operator*(mat2 a, float2 b)
 {
-    return mul(b, a); // have to be flipped!
+    return mul(b, a.data); // have to be flipped!
+}
+
+float2 operator*(float2 a, mat2 b)
+{
+    return mul(b.data, a);
 }
 
 struct mat3 {
@@ -251,20 +262,16 @@ struct mat3 {
 };
 
 // a * b in GLSL!
-float3 mul(float3 b, mat3 a) {
-    return mul(b, a.data);
-}
+// float3 mul(float3 b, mat3 a) {
+//     return mul(b, a.data);
+// }
 
 float3 operator*(mat3 a, float3 b)
 {
-    return mul(b, a); // have to be flipped!
+    return mul(b, a.data); // have to be flipped!
 }
 
 
-float2 operator*(float2 a, mat2 b)
-{
-    return mul(b.data, a);
-}
 
 vec2 dFdx(vec2 v)
 {

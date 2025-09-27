@@ -1,4 +1,5 @@
-// source: https://www.shadertoy.com/view/flXBzB
+
+    // source: https://www.shadertoy.com/view/flXBzB
 #define PI 3.141592653
 
 // old defines:
@@ -8,11 +9,7 @@
 
 
 // Some defines had to be moved to shadertoy2.slang for language limitations >:(
-
-
-//vec2 iCam; 
-
-
+// (globals have to be static, etc)
 
 
 // original: https://www.shadertoy.com/view/7djSzK
@@ -231,12 +228,6 @@ float softshadow( in vec3 ro, in vec3 rd, float mint, float maxt, float w )
 
 // -------------------------------------------------
 // drawing options:
-#define FREQ_MULT 1.5
-#ifdef NO_TWIST
-#define TWIST_MULT 0.
-#else
-#define TWIST_MULT 1.
-#endif
 
 // Draw dots in the beginning of the wave:
 #define DOTS 
@@ -293,13 +284,13 @@ float sdWave(vec3 p, float h, vec3 n, float freq, float amp) {
     float dSine = sdSine(uv, freq, amp); // 2D nice dist to sine
     
     dSine = sqrt(dPlane*dPlane+dSine*dSine) - .02; // pythagoras, -.02 adds a bit of thickness
-    dSine = max(dSine, p.x-x_range.x); // cut off an end
-    dSine = max(dSine, -p.x+x_range.y); // cut off an end
+    dSine = max(dSine, p.x - 0.);                  // cut off an end
+    dSine = max(dSine, -p.x + tube_end_x); // cut off an end
     
 #ifdef DOTS
     float y = amp*sin(freq * PI * TIME); 
     dSine = min(dSine, // union of dSine (the wave) and
-                length(p-vec3(x_range.x, y, 0.))-.08 // a dot
+                length(p-vec3(0., y, 0.))-.08 // a dot
             );
     // another dot at the end of the wave segment (looks better without this i think):
     //float phi = (x_range.y-x_range.x) * freq*PI; // phase shift depends on distance
@@ -322,8 +313,10 @@ vec2 GetDist(vec3 p, in float filter_theta, inout float minDists[N_WLS]) {
     
     for (int i=0;i<N_WLS;i++) {
         float t = wl_idx[i]; // 0 blue 1 red
-        float twist = TWIST_MULT*mix(min_twist, max_twist, t);
-        float freq  = FREQ_MULT*mix(max_f, min_f, t);
+        float twist = g_twist_mult*mix(min_twist, max_twist, t);
+        float freq  = g_freq_mult*mix(max_f, min_f, t);
+        
+        
         vec3 q = p;
 #if REPEAT_DOMAIN == 1
         float s = 4.;
@@ -346,12 +339,12 @@ vec2 GetDist(vec3 p, in float filter_theta, inout float minDists[N_WLS]) {
               
         mat2  m = mat2(c,-s,s,c);
         // amplitude is the cosine of the angle between the twist and the filter orientation
-        float angle = twist*x_range.y - filter_theta+PI/2.;
+        float angle = twist * tube_end_x - filter_theta+PI/2.;
         float amp = cos(angle) * cos(angle);
         amp = max(0.000001,amp);//Remove singularity when amp=0 (perfectly perpendicular filters)
-        
-        //float amp = abs(sin(-twist*x_range.y+filter_theta));
-        q = vec3(p.x-x_range.y, m*p.yz);
+
+        // float amp = abs(sin(-twist*x_range.y+filter_theta));
+        q = vec3(p.x - tube_end_x, m*p.yz);
         d2 = sdWave(q, 0., vec3(0.,0.,1.), freq, amp);
         minDists[i] = min(minDists[i], d2); 
 
@@ -382,7 +375,7 @@ vec3 intersect( in vec3 ro, in vec3 rd, in float filter_theta, inout float minDi
     
     for( int i=0; i<MAX_STEPS; i++ )
     {
-        if( h<SURF_DIST || t>maxd || p.x < x_range.y-6. ) break;
+        if (h < SURF_DIST || t > maxd || p.x < tube_end_x-6. ) break;
         p = ro+rd*t;
 	    vec2 dist =  GetDist( p,filter_theta, minDists );
         h = dist.x; id = dist.y;
@@ -390,24 +383,10 @@ vec3 intersect( in vec3 ro, in vec3 rd, in float filter_theta, inout float minDi
         mind = min(abs(h), mind);
     }
 
-    if( t>maxd || p.x < x_range.y-6.) t=-1.0;
+    if (t > maxd || p.x < tube_end_x-6.) t=-1.0;
 	
     return vec3(t, mind, id);
 }
-
-// warning: don't use this with the glowy global array
-
-/*
-[mutating]
-vec3 GetNormal( in vec3 pos )
-{
-    vec3 eps = vec3(0.01,0.0,0.0);
-
-	return normalize( vec3(
-           GetDist(pos+eps.xyy).x - GetDist(pos-eps.xyy).x,
-           GetDist(pos+eps.yxy).x - GetDist(pos-eps.yxy).x,
-           GetDist(pos+eps.yyx).x - GetDist(pos-eps.yyx).x ) );
-}*/
 
 
 vec3 GetRayDir(vec2 uv, vec3 p, vec3 l, float z) {
@@ -420,41 +399,31 @@ vec3 GetRayDir(vec2 uv, vec3 p, vec3 l, float z) {
     return normalize(i);
 }
 
-
-// Reads from one of our variables ([0:4], 0). Just for interaction
-vec4 read(ivec2 id) {
-    return .5;// TEMP texelFetch(iChannel0, id, 0);
-}
-
-
 //[mutating]
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
-    
+    vec2 v = iMouse.xy/iResolution.xy;
+    vec2 rotate_cam = iMouseRight.xy/iResolution.xy;  // read(ivec2(1,0)).xy;
+    float pan_cam_x = iMouseCtrl.x/iResolution.x;  // read(ivec2(3,0)).x;
+    float cam_front = iMouseAlt.y/iResolution.y;  /// read(ivec2(4,0)).y;
+    vec2 filter_xy  = v;//read(ivec2(2,0)).xy;
 
-    fragColor = vec4(iTime, iTime*2., iTime/3., 1.0);
-    return;
-        
+    
     float minDists[N_WLS]; // for cheap glowy thing
 
     vec2 uv = (fragCoord-.5*iResolution.xy)/iResolution.y;
-	vec2 m = read(ivec2(1,0)).xy;//iMouse.xy/iResolution.xy;
+	vec2 m = rotate_cam;
+    //vec2 m = iMouse.xy/iResolution.xy;
     // initialize glowy vector:
     for (int i=0;i<N_WLS;i++) { minDists[i] = MAX_DIST; }
     
     vec3 ro = vec3(0, 3, -3);
 
-#if MOUSE_MODE == 1
-    m = vec2(.5);
-#elif MOUSE_MODE == 2
-    m = vec2(.10,-.40);
-#endif
-    
     // ----------------------
     // Camera movement:
 #if MOUSE_MODE == 3
     // move cam back or front
-    ro *= 3. * (max(read(ivec2(4,0)).y, .01)); 
+    ro *= 3. * (max(cam_front, .01)); 
 #endif
 
     ro.yz = ro.yz * Rot(-m.y*PI+1.);
@@ -464,25 +433,26 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     vec3 col = vec3(0);
     
     ro.x -= 2.; // move cam to right a bit
-    
-    #if VIEW >= 1
-    ro.x -= -x_range.y-1.;//28.;
+
+#if VIEW >= 1
+    ro.x -= -tube_end_x-1.;//28.;
     #endif
     #if VIEW == 3
     ro.x -= 1.8; 
-    ro.x -= mix(-11.8, 2., read(ivec2(3,0)).x);
-    ro.x = max(ro.x, x_range.y-5.9); // keep the cam bounded before final wall
+    //ro.x -= mix(-11.8, 2., read(ivec2(3,0)).x);
+    ro.x -= mix(-11.8, 2., pan_cam_x);
+    ro.x = max(ro.x, tube_end_x-5.9); // keep the cam bounded before final wall
     #endif
     // ----------------------
     // Filter rotation:
         
     float filter_theta=3.*PI/4.;
     
-    mat2 filter_R = mat2 (0.,-1.,1,0.);
+    mat2 filter_R = mat2(0.,-1.,1,0.);
 #if MOUSE_MODE == 2
     filter_theta = atan(m.y-.5, m.x-.5);
 #elif MOUSE_MODE == 3
-    vec2 th = read(ivec2(2,0)).xy;
+    vec2 th = filter_xy;
     filter_theta = -atan(th.y-.5, th.x-.5);
 #endif
     float s = sin(filter_theta), 
@@ -509,7 +479,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
  #define DRAW_FILTERS
  #ifdef DRAW_FILTERS
     { // raytrace tube ends
-        float tPlane = plaIntersect(ro,rd,vec4(1., 0., 0., -x_range.x));
+        float tPlane = plaIntersect(ro,rd,vec4(1., 0., 0., 0.));
         
         
         if (tPlane < MAX_DIST*5. && tPlane>0.) {
@@ -519,13 +489,13 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
             float grid = pristineGrid( pPlane.yz, ddx, ddy, vec2(0.,0.01));
             
             // "lighting" for the grid:
-            grid *= 30.*exp(-.56*length(pPlane.yz)); 
-            
-            col += .1*vec3(1.,1.,.8)*grid*(exp(-.02*tPlane)); 
+            grid *= 30.*exp(-.56*length(pPlane.yz));
+
+            col += .1 * vec3(1., 1., .8) * grid * (exp(-.02 * tPlane)); 
         }
     }
     { // Second grid
-        float tPlane = plaIntersect(ro,rd,vec4(1., 0., 0., -x_range.y));
+        float tPlane = plaIntersect(ro, rd, vec4(1., 0., 0., -tube_end_x));
         
         if (tPlane < MAX_DIST*5. && tPlane>0.){
             vec3 pPlane=ro+rd*tPlane;
@@ -535,18 +505,18 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
             
             float grid = pristineGrid( pPlane.yz, ddx, ddy, vec2(0.01,0.));
             
-            // "lighting" for the grid:
-            grid *= 30.*exp(-.56*length(pPlane.yz)); 
-            
-            col += .1*vec3(1.,1.,.8)*grid*(exp(-.02*tPlane)); 
+            // "lighting" for the grid: 
+            grid *= 30.*exp(-.56*length(pPlane.yz)) ;
+
+            col += .1 * vec3(1., 1., .8) * grid * (exp(-.02 * tPlane)); 
         }
         
     }
  #endif
  #ifdef CYLINDER
  {
-     vec4 cyl = cylIntersect( ro, rd, vec3(x_range.x,0.,0.), 
-                         vec3(x_range.y,0.,0.), 1.6);
+     vec4 cyl = cylIntersect(ro, rd, vec3(0., 0., 0.),
+                             vec3(tube_end_x,0.,0.), 1.6);
      
      float t = cyl.x;
      if (t>0.) {
@@ -574,26 +544,26 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
         
     } 
  #if VIEW >= 2
- 
+
     { // raytrace final wall
-        float tPlane = plaIntersect(ro,rd,vec4(-1., 0., 0., x_range.y-6.));
+        float tPlane = plaIntersect(ro, rd, vec4(-1., 0., 0., tube_end_x-6.));
         if (tPlane < MAX_DIST*5. && tPlane>0.) {
             vec3 pPlane=ro+rd*tPlane;
             
             // Get final color (avg of wls.)
             vec3 c = vec3(0.);
             
-            vec2 ddx = dFdx(pPlane.yz), ddy = dFdy(pPlane.yz);
-            float grid = pristineGrid( pPlane.yz, ddx, ddy, vec2(0.01,0.01));
-            c += grid;
+            vec2 ddx = dFdx(pPlane.yz)*1., ddy = dFdy(pPlane.yz)*1.;
+            float grid = pristineGrid( pPlane.yz, ddx, ddy, vec2(0.025,0.025));
+            c += grid/3.;
 
             if (filter_theta < -PI/2.) filter_theta += 2.*PI;
             for (int i=0;i<N_WLS;i++) {
 
                 float t = wl_idx[i]; // 0 blue 1 red
-                float twist = TWIST_MULT*mix(min_twist, max_twist, t);
+                float twist = g_twist_mult*mix(min_twist, max_twist, t);
                 // amplitude is the cosine of the angle between the twist and the filter orientation
-                float angle = twist*x_range.y - filter_theta+PI/2.;
+                float angle = twist * tube_end_x - filter_theta+PI/2.;
                 float amp = cos(angle) * cos(angle);
                 
                 c += amp*normalize(rgb_wl(wl_idx[i]));
@@ -607,7 +577,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
  #endif
  
     //col =1.1* col/(1.+col); // reinhard (dont like it here) 
-    col = aces(1.*col);
-    col = pow(col, vec3(1./2.2)); // gamma
+    //col = aces(1.*col);
+    //col = pow(col, vec3(2.2)); // gamma
     fragColor = vec4(col,1.0);
 }
