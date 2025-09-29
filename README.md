@@ -18,3 +18,11 @@ python apps/barber1/barberpole.py apps/barber1/shaders/barber.glsl
 - It was made roughly following [this example](https://github.com/shader-slang/slang/blob/master/examples/shader-toy/shader-toy.slang) about wrapping Shadertoy from the slang repo, but removing the interface stuff... Didn't seem very useful and it was quite complicated
 - Added a couple of sliders
 - It would be interesting to think how we could make use of compute shaders here to speed things up
+
+### Barber pole with PostFX ([src](https://github.com/nestor98/slangpy-experiments/tree/master/apps/barber_bloom))
+<img width="1715" height="857" alt="Captura de pantalla 2025-09-29 233710" src="https://github.com/user-attachments/assets/4c47b7a8-e8db-4222-bcd6-8cb8a3e590c1" />
+
+- Adapted that to run with a modified version of a Falcor postprocessing .slang file
+- Fixed some artifacts in the shader (NaNs and SDF false positives)
+- Bloom can still be adapted to look more like the original, i guess
+
