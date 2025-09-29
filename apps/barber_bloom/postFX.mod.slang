@@ -70,6 +70,7 @@ struct BloomCB {
     float gBloomStrength;
     float gBloomClamp;
     float gBloomAmount;
+    float gBloomRadius;
     bool gInPlace;   
 }
 
@@ -180,7 +181,8 @@ void downsample(uint2 pixel, BloomCB cb, Texture2D<float4> gSrc,
     if (any(pixel.xy >= cb.gResolution))
         return;
     float2 uv = (pixel + 0.5f) * cb.gInvRes;
-    float4 c = blurFilter5x5(gSrc, gSampler, uv, cb.gInvRes.x * 0.5f, cb.gInvRes.y * 0.5f);
+    float scale = .5 * cb.gBloomRadius;
+    float4 c = blurFilter5x5(gSrc, gSampler, uv, cb.gInvRes.x * scale, cb.gInvRes.y * scale);
     gDst[pixel] = thresholdBloom(c, cb.gBloomThreshold);
 }
 
@@ -194,7 +196,10 @@ void upsample(uint2 pixel, BloomCB cb,
     if (any(pixel.xy >= cb.gResolution))
         return;
     float2 uv = (pixel + 0.5f) * cb.gInvRes;
-    float4 centertap = blurFilter3x3(gBloomed, gSampler, uv, cb.gInvRes.x, cb.gInvRes.y);
+    // float4 centertap = blurFilter3x3(gBloomed, gSampler, uv, cb.gInvRes.x, cb.gInvRes.y);
+    float4 centertap = blurFilter3x3(gBloomed, gSampler, uv,
+                                     cb.gBloomRadius * cb.gInvRes.x, 
+                                     cb.gBloomRadius * cb.gInvRes.y);
 
     centertap.rgb = min(centertap.rgb * cb.gBloomStrength, cb.gBloomClamp); // scale up the bloom, and clamp to avoid excessive values
     // do a smooth clamping again instead:

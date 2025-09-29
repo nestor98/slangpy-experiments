@@ -80,6 +80,7 @@ class PostFX:
         self.mBloomStrength = 1.0
         self.mBloomThreshold = 1.0
         self.mBloomClamp = 100.0
+        self.mBloomSize = 1.0
 
         # How much of a 6-pointed star to add to the bloom kernel
         self.mStarAmount = 0.0
@@ -133,7 +134,7 @@ class PostFX:
         self.mBloomStrength = spy.ui.SliderFloat(bloom_group, "Bloom Strength", value=self.mBloomStrength, min=0.0, max=10.0, flags=spy.ui.SliderFlags.logarithmic)
         self.mBloomThreshold = spy.ui.SliderFloat(bloom_group, "Bloom Threshold", value=self.mBloomThreshold, min=0.0, max=1000.0, flags=spy.ui.SliderFlags.logarithmic)
         self.mBloomClamp = spy.ui.SliderFloat(bloom_group, "Bloom Clamp", value=self.mBloomClamp, min=1.0, max=1000.0, flags=spy.ui.SliderFlags.logarithmic)
-        
+        self.mBloomSize = spy.ui.SliderFloat(bloom_group, "Bloom Size", value=self.mBloomSize, min=0.0, max=5.0, flags=spy.ui.SliderFlags.logarithmic)
 
         self.mStarAmount = spy.ui.SliderFloat(lens_fx_group, "Bloom Star", value=self.mStarAmount, min=0.0, max=1.0, flags=spy.ui.SliderFlags.logarithmic)
         self.mStarAngle = spy.ui.SliderFloat(lens_fx_group, "Star Angle", value=self.mStarAngle, min=0.0, max=1.0)
@@ -144,6 +145,7 @@ class PostFX:
             self.mBloomAmount.value = 0.01
             self.mBloomStrength.value = 1.0
             self.mBloomThreshold.value = 1.0
+            self.mBloomSize.value = 1.0
             self.mBloomClamp.value = 100.0
             self.mStarAmount.value = 0.0
             self.mStarAngle.value = 0.1
@@ -282,9 +284,7 @@ class PostFX:
             address_u=spy.TextureAddressingMode.clamp_to_border, address_v=spy.TextureAddressingMode.clamp_to_border
             , address_w=spy.TextureAddressingMode.clamp_to_border,
             border_color=spy.float4(0.0, 0.0, 0.0, 0.0)
-        ) # TODO: it is a NAN that gets propagated in the downsampling process!
-        # sampler.set_filter_mode(spy.TextureFilteringMode.linear, spy.TextureFilteringMode.linear, spy.TextureFilteringMode.point)
-        # sampler.set_addressing_mode(spy.TextureAddressingMode.border, spy.TextureAddressingMode.border, spy.TextureAddressingMode.border)
+        ) 
         # downsample:
         if self.mBloomAmount.value > 0.0:
             assert self.mpPyramid[0] is not None
@@ -296,7 +296,9 @@ class PostFX:
                                        _append_to=command_encoder,
                                        cb={"gResolution": res,
                                            "gInvRes": invres,
-                                           "gBloomThreshold": self.mBloomThreshold.value},
+                                           "gBloomThreshold": self.mBloomThreshold.value,
+                                           "gBloomRadius": self.mBloomSize.value
+                                           },
                                        gSampler=sampler,
                                        gSrc=self.mpPyramid[level] if level>0 else pSrc,
                                        gDst=self.mpPyramid[level + 1]
@@ -320,6 +322,7 @@ class PostFX:
                                          "gBloomStrength": self.mBloomStrength.value,
                                          "gBloomThreshold": self.mBloomThreshold.value,
                                          "gBloomClamp": self.mBloomClamp.value,
+                                         "gBloomRadius": self.mBloomSize.value,
                                          "gStar": self.mStarAmount.value if wantStar else 0.0,
                                          "gStarDir1": starDir1, "gStarDir2": starDir2, "gStarDir3": starDir3, "gInPlace": level > 0},
                                      gSampler=sampler,

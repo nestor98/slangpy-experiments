@@ -34,9 +34,7 @@ class ShaderToyUniforms:
         self.iMouse = mouse           # float4
 
 
-def glsl_src_to_slang(glsl_src, slang_file_1="shadertoy1.slang", 
-                      slang_file_2="shadertoy2.slang",
-                      output_slang="wrapped_shader.slang") -> str:
+def glsl_src_to_slang(glsl_src) -> str:
     """
     Converts GLSL source to Slang source by wrapping it with slang shadertoy defines.
     Returns the slang source, and also writes it to output_slang file.
@@ -46,13 +44,6 @@ def glsl_src_to_slang(glsl_src, slang_file_1="shadertoy1.slang",
     with temp_slang_file.open("w") as f:
         f.write(slang_src)
     return str(slang_src)
-
-def glsl_file_to_slang(glsl_file, slang_file_1="shadertoy1.slang", 
-                      slang_file_2="shadertoy2.slang",
-                      output_slang="wrapped_shader.slang") -> str:
-    """ Same as above, but reads the glsl from a file """
-    glsl_src = Path(glsl_file).read_text()
-    return glsl_src_to_slang(glsl_src, slang_file_1, slang_file_2, output_slang)
 
 
 class App:
