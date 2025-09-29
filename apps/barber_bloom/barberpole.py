@@ -5,6 +5,8 @@ from pathlib import Path
 import numpy as np
 import slangpy as spy
 
+from postFX import PostFX
+
 BASE_DIR = Path(__file__).parent
 
 
@@ -56,7 +58,7 @@ def glsl_file_to_slang(glsl_file, slang_file_1="shadertoy1.slang",
 class App:
     def __init__(self, src_file=None, flip_mouse_y=True):
         super().__init__()
-        self.window = spy.Window(width=1920, height=1080, title="ShaderToy", resizable=True)
+        self.window = spy.Window(width=720, height=480, title="ShaderToy", resizable=True)
         # self.device = spy.Device(enable_debug_layers=False, compiler_options={"include_paths": [BASE_DIR]})
                 
         self.device = spy.create_device(
@@ -65,6 +67,9 @@ class App:
             ],
             enable_debug_layers=False # Debug is a lot slower (more than 2x)
         )
+
+        # post fx:  
+        self.postFX = PostFX(self.device)
 
         self.surface = self.device.create_surface(self.window)
         self.surface.configure(width=self.window.width, height=self.window.height)
@@ -84,7 +89,7 @@ class App:
             self.logger.error(f"File {src_file} is not a .glsl or .slang file")
             sys.exit(1)
         if src_path.suffix == ".slang":
-            self.logger.info("Using .slang file directly (must have the correct ShaderToyUniforms and entry point).")
+            # self.logger.info("Using .slang file directly (must have the correct ShaderToyUniforms and entry point).")
             temp_slang_file = src_file
         else:
             # Load and wrap GLSL
@@ -103,12 +108,12 @@ class App:
         self.frame = 0
 
         # Dummy channel textures
-        self.channels = [
-            self.device.create_texture(
-                format=spy.Format.rgba32_float,
-                width=1, height=1, data=np.zeros((1, 1, 4), dtype=np.float32))
-            for _ in range(4)
-        ]
+        # self.channels = [
+        #     self.device.create_texture(
+        #         format=spy.Format.rgba32_float,
+        #         width=1, height=1, data=np.zeros((1, 1, 4), dtype=np.float32))
+        #     for _ in range(4)
+        # ]
 
         self.R = spy.float2(self.window.width, self.window.height)
         self.mouse_pos = spy.float2(.5) * self.R 
@@ -130,10 +135,6 @@ class App:
         
         self.setup_ui()
 
-        # post fx:  
-        # TODO: add the postfx module using the falcor slang file:
-        # self.postfx_module = spy.Module("postfx", self.device)
-        self.enable_postfx = False
 
     def on_keyboard_event(self, event: spy.KeyboardEvent):
         if self.ui.handle_keyboard_event(event):
@@ -155,9 +156,9 @@ class App:
 
     def setup_ui(self):
         screen = self.ui.screen
-        def toggle_settings():
-            self.ui_window.show()
-            ui_button.close()
+        # def toggle_settings():
+        #     self.ui_window.show()
+        #     ui_button.close()
         # ui_button = spy.ui.Button(label="?", callback=toggle_settings)
         # ui_button.tooltip = "Toggle Settings"
 
@@ -176,7 +177,10 @@ class App:
         self.twist_mult = spy.ui.SliderFloat(window, "Twist", value=1, min=0, max=3)
         # self.mouse_radius = spy.ui.SliderFloat(window, "Radius", value=100, min=0, max=1000)
 
-        spy.ui.Button(window, "Toggle PostFX", callback=lambda: setattr(self, 'enable_postfx', not self.enable_postfx))
+        # spy.ui.Button(window, "Toggle PostFX", callback=lambda: setattr(self, 'enable_postfx', not self.enable_postfx))
+
+        # Add the postFX ui:
+        self.postFX.setup_ui(window)
 
     def on_mouse_event(self, event: spy.MouseEvent):
         if self.ui.handle_mouse_event(event): # if mouse is over ui, it has priority
@@ -237,8 +241,7 @@ class App:
             if not surface_texture:
                 continue
 
-            if (
-                self.output_texture is None
+            if (self.output_texture is None
                 or self.output_texture.width != surface_texture.width
                 or self.output_texture.height != surface_texture.height
             ):
@@ -247,7 +250,12 @@ class App:
                     width=surface_texture.width,
                     height=surface_texture.height,
                     usage=spy.TextureUsage.shader_resource | spy.TextureUsage.unordered_access,
-
+                )
+                self.postFX_texture = self.device.create_texture(
+                    format=spy.Format.rgba32_float,
+                    width=surface_texture.width,
+                    height=surface_texture.height,
+                    usage=spy.TextureUsage.shader_resource | spy.TextureUsage.unordered_access | spy.TextureUsage.render_target,
                 )
 
             command_encoder = self.device.create_command_encoder()
@@ -258,7 +266,8 @@ class App:
                     "g_output": self.output_texture,
                     "ShaderToyUniforms" : { # constant buffer passed as dict
                         "iResolution":(float(self.window.width), float(self.window.height)),
-                        "iTime": float(sim_time)+10,
+                        "iTime": float(sim_time)+12.0, # some bug in my shader at t<10 :)
+                        "iFrame" : self.frame,
                         "iMouse": (self.mouse_pos.x, self.mouse_pos.y, 1.0 if self.mouse_down else 0.0, 0.0),
                         "iMouseRight": (self.rmouse_pos.x, self.rmouse_pos.y, 1.0 if self.rmouse_down else 0.0, 0.0),
                         "iMouseShift": (self.mouse_pos_shift.x, self.mouse_pos_shift.y, 0.0, 0.0),
@@ -276,11 +285,17 @@ class App:
                 command_encoder=command_encoder,
             )
 
-            command_encoder.blit(surface_texture, self.output_texture)
+            # PostFX
+            post_applied = self.postFX.execute(command_encoder, self.output_texture, self.postFX_texture)
+
+            image = self.output_texture if not post_applied else self.postFX_texture
+            command_encoder.blit(surface_texture, image)
+            # ----------------------------------------------
+                
             # ui:
             self.ui.new_frame(surface_texture.width, surface_texture.height)
             self.ui.render(surface_texture, command_encoder)
-            # ................
+            # ----------------------------------------------
             self.device.submit_command_buffer(command_encoder.finish())
             del surface_texture
 

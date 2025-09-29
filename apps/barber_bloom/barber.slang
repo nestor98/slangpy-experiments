@@ -394,6 +394,7 @@ vec3 xyz_fit(float wl) {
 vec3 rgb_wl(float t) {
     float wl = mix(400,700,t);
     vec3 rgb = xyz2srgb(xyz_fit(wl));
+    rgb = max(rgb, vec3(0.));
     return rgb;
 }
 
@@ -645,9 +646,10 @@ vec2 GetDist(vec3 p, in float filter_theta) {
         //minDists[i] = min(minDists[i], d2); 
         if (d2<d) {
             d= d2;
-            id = t;
+            id = i;
         }
 #if VIEW >= 2
+// #if VIEW <0
         // Compute the waves coming out of the second filter (linear pol)
         // same as twist function, but using only the pos of the second filter instead of the x pos:
         if (filter_theta < -PI/2.) filter_theta += 2.*PI;
@@ -658,16 +660,20 @@ vec2 GetDist(vec3 p, in float filter_theta) {
         // amplitude is the cosine of the angle between the twist and the filter orientation
         float angle = twist * tube_end_x - filter_theta+PI/2.;
         float amp = cos(angle) * cos(angle);
-        amp = max(0.000001,amp);//Remove singularity when amp=0 (perfectly perpendicular filters)
-
-        // float amp = abs(sin(-twist*x_range.y+filter_theta));
-        q = vec3(p.x - tube_end_x, m*p.yz);
-        d2 = sdWave(q, 0., vec3(0.,0.,1.), freq, amp);
-        //minDists[i] = min(minDists[i], d2); 
+        if (amp < 0.05) { // just do a line if the amp is very small
+            d2 = length(q.yz) - .02;         // distance to the center line
+            d2 = max(d2, p.x - tube_end_x);                  // cut off an end
+            d2 = max(d2, p.x - tube_end_x-6.); // cut off an end
+        }
+        else {
+            amp = max(0.001, amp); // Remove singularity when amp=0 (perfectly perpendicular filters)
+            q = vec3(p.x - tube_end_x, m * p.yz);
+            d2 = sdWave(q, 0., vec3(0., 0., 1.), freq, amp);
+        }
 
         if (d2<d) {
             d= d2;
-            id = t;
+            id = i;
         }
 #endif
     }
@@ -695,9 +701,12 @@ vec3 intersect( in vec3 ro, in vec3 rd, in float filter_theta )
         if (h < SURF_DIST || t > maxd || p.x < tube_end_x-6. ) break;
         p = ro+rd*t;
 	    vec2 dist =  GetDist( p,filter_theta );
-        h = dist.x; id = dist.y;
+        h = dist.x; //id = dist.y;
         t += h * STEP_DECREASE;
-        mind = min(abs(h), mind);
+        if (abs(h) < mind) {
+            id = dist.y;
+            mind = abs(h);
+        }
     }
 
     if (t > maxd || p.x < tube_end_x-6.) t=-1.0;
@@ -719,8 +728,8 @@ vec3 GetRayDir(vec2 uv, vec3 p, vec3 l, float z) {
 //[mutating]
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
-    vec2 v = iMouse.xy/iResolution.xy;
-    vec2 rotate_cam = iMouseRight.xy/iResolution.xy;  // read(ivec2(1,0)).xy;
+    vec2 v = iMouseRight.xy/iResolution.xy;
+    vec2 rotate_cam = iMouse.xy/iResolution.xy;  // read(ivec2(1,0)).xy;
     float pan_cam_x = iMouseCtrl.x/iResolution.x;  // read(ivec2(3,0)).x;
     float cam_front = iMouseAlt.y/iResolution.y;  /// read(ivec2(4,0)).y;
     vec2 filter_xy  = v;//read(ivec2(2,0)).xy;
@@ -730,9 +739,6 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 
     vec2 uv = (fragCoord-.5*iResolution.xy)/iResolution.y;
 	vec2 m = rotate_cam;
-    //vec2 m = iMouse.xy/iResolution.xy;
-    // initialize glowy vector:
-    //for (int i=0;i<N_WLS;i++) { minDists[i] = MAX_DIST; }
     
     vec3 ro = vec3(0, 3, -3);
 
@@ -780,7 +786,8 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     vec3 intersection = intersect(ro, rd, filter_theta);
     float d = intersection.x; // dist origin->surface (-1 if no intersect)
     float closest_d = intersection.y; // for missing rays, how close did they get?
-    float wl = intersection.z; // id of closest thing
+    float id = intersection.z; // id of closest thing
+
     
     // Shade the waves:
     vec3 p = ro+rd*MAX_DIST; // p of intersection
@@ -793,9 +800,15 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     // col = .9 * vec3(.9, .9, .99)
     //       * exp(-68. * t); // this is to shade even grazing rays (kind of AA)
     // Now, for bloom, stronger HDR color that depends on the wavelength:
-    vec3 glow = normalize(rgb_wl(wl));
-    col = 1000. * glow 
-          * exp(-6800.*t); // this is to shade even grazing rays (kind of AA)   
+    vec3 glow = normalize(rgb_wl(wl_idx[int(id + .001)]));
+    col = 1000. * glow * smoothstep(1e-3f, 1e-8, t); // * exp(-680. * t); // this is to shade even grazing rays (kind of AA)
+    //*exp(-450. * t);                                 //
+    // col = max(col, 0.);
+    // if (any(col < 0.)) {
+    //     fragColor = vec4(t, 0., 1., 1.);
+    //     fragColor.rgb = col;
+    //     return;
+    // }
    
  #define DRAW_FILTERS
  #ifdef DRAW_FILTERS
@@ -844,7 +857,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
          vec3 l = vec3(.7,1.,1.); // bluish
          vec3 n = normalize(cyl.yzw);
          #if 1
-         l *= pow(1.-dot(n.yz, normalize(-rd.yz)),5.);//highlight the edge
+         l *= pow(1.001-dot(n.yz, normalize(-rd.yz)),5.);//highlight the edge
          l *= 1.*smoothstep(.0,.3,dot(n.yz,normalize(-rd.yz))); // AA the edge 
          #else
          // also accounts for x normal (i think the other looks better)
@@ -854,6 +867,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
          
          col += l;
      }
+     
  }
  #endif
  
@@ -896,10 +910,11 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
             
     }
  #endif
- 
-    //col =1.1* col/(1.+col); // reinhard (dont like it here) 
-    //col = aces(1.*col);
-    //col = pow(col, vec3(2.2)); // gamma
+
+    // col =1.1* col/(1.+col); // reinhard (dont like it here)
+    // col = aces(1.*col);
+    // col = pow(col, vec3(2.2)); // gamma
+    col = select(isnan(col), vec3(100000.,0.,100000.), col);// Be careful with nans
     fragColor = vec4(col,1.0);
 }
     // ---------------- User Code Ends Here ------------------
