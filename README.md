@@ -21,6 +21,8 @@ python apps/barber1/barberpole.py apps/barber1/shaders/barber.glsl
 
 ### Barber pole with PostFX ([src](https://github.com/nestor98/slangpy-experiments/tree/master/apps/barber_bloom))
 <img width="1715" height="857" alt="Captura de pantalla 2025-09-29 233710" src="https://github.com/user-attachments/assets/4c47b7a8-e8db-4222-bcd6-8cb8a3e590c1" />
+<img width="1920" height="1020" alt="Captura de pantalla 2025-09-29 235528" src="https://github.com/user-attachments/assets/b04fc53b-4b5c-4496-adb5-5957d32f1317" />
+
 
 - Adapted that to run with a modified version of a Falcor postprocessing .slang file
 - Fixed some artifacts in the shader (NaNs and SDF false positives)
