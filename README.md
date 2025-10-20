@@ -10,6 +10,14 @@ Run something:
 python apps/barber1/barberpole.py apps/barber1/shaders/barber.glsl
 ```
 
+the shadertoy based apps preprocess glsl to slang. This may not work in all cases without tweaking the glsl or the generated slang, but is straightforward for simple shadertoys. 
+
+You can also directly input the transpiled slang to avoid redoing the preprocessing:
+
+```
+python apps/barber1/barberpole.py apps/barber1/wrapped_shader.slang
+```
+
 ### Barber pole ([src](https://github.com/nestor98/slangpy-experiments/tree/master/apps/barber1))
 
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/8dba403e-1dc0-4d67-81ef-794ecbf2a1f6" />
