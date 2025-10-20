@@ -19,7 +19,9 @@ python apps/barber1/barberpole.py apps/barber1/wrapped_shader.slang
 ```
 
 ### Barber pole ([src](https://github.com/nestor98/slangpy-experiments/tree/master/apps/barber1))
-
+```
+python apps/barber1/barberpole.py apps/barber1/wrapped_shader.slang
+```
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/8dba403e-1dc0-4d67-81ef-794ecbf2a1f6" />
 
 - Ported my [shadertoy visualization](https://www.shadertoy.com/view/3fsGzr) of the barber pole effect. It's a good example for porting other shaders. There were some gotchas in the process, but with slang and python some things (such as inputs and managing state) are much less painful than in shadertoy. 
@@ -28,6 +30,9 @@ python apps/barber1/barberpole.py apps/barber1/wrapped_shader.slang
 - It would be interesting to think how we could make use of compute shaders here to speed things up
 
 ### Barber pole with PostFX ([src](https://github.com/nestor98/slangpy-experiments/tree/master/apps/barber_bloom))
+```
+python apps/barber_bloom/barberpole.py 
+```
 <img width="1715" height="857" alt="Captura de pantalla 2025-09-29 233710" src="https://github.com/user-attachments/assets/4c47b7a8-e8db-4222-bcd6-8cb8a3e590c1" />
 <img width="1920" height="1020" alt="Captura de pantalla 2025-09-29 235528" src="https://github.com/user-attachments/assets/b04fc53b-4b5c-4496-adb5-5957d32f1317" />
 
