@@ -37,7 +37,7 @@ python apps/barber_bloom/barberpole.py
 <img width="1920" height="1020" alt="Captura de pantalla 2025-09-29 235528" src="https://github.com/user-attachments/assets/b04fc53b-4b5c-4496-adb5-5957d32f1317" />
 
 
-- Adapted that to run with a modified version of a Falcor postprocessing .slang file
+- Adapted that to run with a modified version of a Falcor postprocessing .slang file (see [the Falcor source](https://github.com/NVIDIAGameWorks/Falcor/blob/eb540f6748774680ce0039aaf3ac9279266ec521/Source/RenderPasses/SimplePostFX/SimplePostFX.cs.slang), by Simon Kallweit)
 - Fixed some artifacts in the shader (NaNs and SDF false positives)
 - Bloom can still be adapted to look more like the original, i guess
 
